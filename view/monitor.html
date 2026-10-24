@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>Attio call monitor</title>
+  <style>
+    body { font: 13px/1.4 ui-monospace, Consolas, monospace; margin: 8px; }
+    #status { color: GrayText; margin-bottom: 8px; }
+    .entry { border: 1px solid GrayText; border-radius: 4px; margin: 6px 0; padding: 6px; }
+    .entry.awaiting_ack { border: 2px solid #c62828; }
+    .entry pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; }
+    .head { font-weight: bold; }
+    button { margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div id="status">connecting...</div>
+  <div id="entries"></div>
+  <script type="module" src="./monitor.ts"></script>
+</body>
+</html>

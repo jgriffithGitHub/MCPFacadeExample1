@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>AttioExample host</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body { display: grid; grid-template-columns: 1fr 1fr; font: 14px/1.4 system-ui, sans-serif; }
+    #left { display: flex; flex-direction: column; border-right: 1px solid GrayText; min-height: 0; }
+    #controls { padding: 8px; display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; border-bottom: 1px solid GrayText; }
+    #controls input { width: 100%; font: inherit; }
+    #buttons { grid-column: 1 / -1; display: flex; gap: 8px; }
+    #chat { flex: 1; overflow: auto; padding: 8px; font: 13px/1.4 ui-monospace, Consolas, monospace; }
+    .msg { white-space: pre-wrap; margin: 0 0 8px; padding: 6px; border-radius: 4px; }
+    .msg.log { color: GrayText; padding: 0 6px; }
+    .msg.record { background: color-mix(in srgb, CanvasText 6%, Canvas); }
+    .msg.plan { background: color-mix(in srgb, #1565c0 12%, Canvas); }
+    .msg.model { background: color-mix(in srgb, #2e7d32 10%, Canvas); }
+    .msg.error { background: color-mix(in srgb, #c62828 14%, Canvas); }
+    #right { display: flex; flex-direction: column; min-height: 0; }
+    #right-status { padding: 4px 8px; color: GrayText; border-bottom: 1px solid GrayText; }
+    #app-frame { flex: 1; width: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <section id="left">
+    <div id="controls">
+      <label for="csv">CSV path</label><input id="csv" placeholder="C:\path\to\file.csv">
+      <label for="facade">Facade MCP URL</label><input id="facade" value="http://localhost:3001/mcp">
+      <div id="buttons">
+        <button id="start">Start</button>
+        <button id="continue" disabled>Continue</button>
+        <button id="stop" disabled>Stop</button>
+      </div>
+    </div>
+    <div id="chat"></div>
+  </section>
+  <section id="right">
+    <div id="right-status">loading MCP App...</div>
+    <iframe id="app-frame" title="MCP App"></iframe>
+  </section>
+  <script type="module" src="./host.ts"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+{
+  "name": "attio-example",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "npm run build:host && npm run build:sandbox && npm run build:view",
+    "build:host": "cross-env INPUT=host/index.html vite build",
+    "build:sandbox": "cross-env INPUT=host/sandbox.html vite build",
+    "build:view": "cross-env INPUT=view/monitor.html vite build",
+    "typecheck": "tsc --noEmit",
+    "facade": "tsx facade/main.ts",
+    "backend": "tsx backend/main.ts",
+    "fake-attio": "tsx dev/fake-attio.ts",
+    "start": "npm run build && concurrently -n facade,backend \"npm run facade\" \"npm run backend\"",
+    "start:fake": "npm run build && concurrently -n fake,facade,backend \"npm run fake-attio\" \"cross-env ATTIO_MCP_URL=http://localhost:3005/mcp npm run facade\" \"npm run backend\""
+  },
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/express": "^2.0.2",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "cors": "^2.8.6",
+    "csv-parse": "^7.0.3",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "open": "^11.0.4",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "concurrently": "^10.0.6",
+    "cross-env": "^10.1.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vite-plugin-singlefile": "^2.3.4"
+  },
+  "type": "module"
+}
