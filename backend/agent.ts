@@ -1,21 +1,23 @@
 // =============================================================================
 // The agent: reads the CSV, and for each row runs two phases against Claude.
 //
-//   Phase 1 (plan):   model gets the record, NO tools. Returns text: the data
-//                     it read and its plan. Shown in the left pane; then we
-//                     wait for the Continue button.
-//   Phase 2 (update): model gets the record + the facade's tools. Runs the
-//                     tool-use loop until the model stops asking for tools.
+//   Phase 1 (plan):    the PLANNER sees the record and ALL facade tools, but
+//                      can't call any of them. It answers with a Plan: which
+//                      tools are needed, and the prompt the executor should
+//                      get. ("Subagent-based progressive tool discovery" in
+//                      the MCP client best practices.)
+//   Approval:          record + Plan are shown in the left pane; Continue.
+//   Phase 2 (execute): the EXECUTOR gets the planner's prompt and ONLY the
+//                      chosen tools, and runs the tool-use loop.
 //
 // This replaces LangChain's create_agent/ainvoke from the Python baseline.
-// The loop that LangChain hid is now yours to write (runUpdatePhase).
 // =============================================================================
 import Anthropic from "@anthropic-ai/sdk";
 import { Client, StreamableHTTPClientTransport, type CallToolResult, type Tool } from "@modelcontextprotocol/client";
 import { getToolUiResourceUri } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { parse } from "csv-parse/sync";
 import fs from "node:fs";
-import { TOOL_CALL_TIMEOUT_MS, type BackendToClient, type CsvRecord } from "../shared/types.js";
+import { TOOL_CALL_TIMEOUT_MS, type BackendToClient, type CsvRecord, type Plan } from "../shared/types.js";
 
 // Carried over from mcpTest.py.
 export const SYSTEM_PROMPT =
@@ -124,61 +126,174 @@ export async function runAgent(ctx: AgentContext, records: CsvRecord[]) {
     ctx.emit({ type: "record", rowIndex: i, record });
 
     const plan = await runPlanPhase(ctx, record);
-    ctx.emit({ type: "plan", rowIndex: i, text: plan });
+    ctx.emit({ type: "plan", rowIndex: i, plan });
 
     ctx.emit({ type: "awaiting_continue", rowIndex: i });
     await ctx.waitForContinue();
     if (ctx.isStopped()) break;
 
-    await runUpdatePhase(ctx, record);
+    await runUpdatePhase(ctx, record, plan);
   }
 }
 
 // =============================================================================
-// TODO(Jeff): the two phases.
+// Phase 1: planning
 // =============================================================================
 
 /**
- * Phase 1: ask for the data read + plan. No tools. Return the plan text.
+ * The trick that lets the planner SEE every tool without CALLING any:
  *
- * One call: ctx.anthropic.messages.create({ model, max_tokens, system, messages })
- *   messages: Anthropic.MessageParam[] = [{ role: "user", content: "..." }]
- * The response is an Anthropic.Message. Its `content` is an ARRAY of blocks:
- *   [{ type: "text", text: "..." }, ...]
- * Join the text blocks for the plan.
+ *   tools:       [...all 47 facade tools, submit_plan]
+ *   tool_choice: { type: "tool", name: "submit_plan" }
  *
- * Design question: should phase 2 see phase 1's plan? If yes, phase 2 starts
- * from this conversation instead of a fresh one. Then you'd return the
- * messages too, not just the text.
+ * tool_choice forces the model to answer with exactly one call to
+ * submit_plan, so there's no tool loop: one request, one response. Seeing the
+ * full tool definitions (with their schemas) lets the planner write a prompt
+ * that matches what the tools actually accept.
+ *
+ * submit_plan is never sent to the facade. It exists only to give the
+ * planner's answer a fixed SHAPE: its input_schema is the Plan type. The
+ * "enum" on toolNames means the model can only name tools that really exist.
+ *
+ * The response's content will hold one block:
+ *   { type: "tool_use", name: "submit_plan", id, input: { rationale, toolNames, prompt } }
+ * and `input` is our Plan.
  */
-async function runPlanPhase(ctx: AgentContext, record: CsvRecord): Promise<string> {
-  return `TODO(Jeff): runPlanPhase not written yet.\nRecord: ${JSON.stringify(record)}`;
+function submitPlanTool(available: Anthropic.Tool[]): Anthropic.Tool {
+  return {
+    name: "submit_plan",
+    description: "Submit the execution plan for this record. This is the only tool you may call.",
+    input_schema: {
+      type: "object",
+      properties: {
+        rationale: {
+          type: "string",
+          description: "Briefly: what the executor must do for this record, and why each chosen tool is needed.",
+        },
+        toolNames: {
+          type: "array",
+          items: { type: "string", enum: available.map((t) => t.name) },
+          description: "The smallest set of tools the executor needs. It will have no others.",
+        },
+        prompt: {
+          type: "string",
+          description:
+            "Complete instructions for the executor, which sees only this prompt, the system rules and the chosen tools. " +
+            "Include the record's values, the exact attribute slugs and value formats to use, and the order of steps.",
+        },
+      },
+      required: ["rationale", "toolNames", "prompt"],
+    },
+  };
 }
 
+const PLANNER_INSTRUCTIONS =
+  "\n\nYou are the PLANNER. Do not perform the task. Decide which of the available tools a separate " +
+  "executor will need to create or update this record in Attio, and write the prompt the executor will receive. " +
+  "Choose as few tools as will reliably do the job. Respond only by calling submit_plan.";
+
+async function runPlanPhase(ctx: AgentContext, record: CsvRecord): Promise<Plan> {
+  const request: Anthropic.MessageCreateParamsNonStreaming = {
+    model: ctx.model,
+    max_tokens: 4000,
+    system: SYSTEM_PROMPT + PLANNER_INSTRUCTIONS,
+    tools: [...ctx.tools, submitPlanTool(ctx.tools)],
+    tool_choice: { type: "tool", name: "submit_plan" },
+    messages: [
+      {
+        role: "user",
+        content: "Plan the create-or-update of this CSV record in Attio:\n" + JSON.stringify(record, null, 2),
+      },
+    ],
+  };
+  // The tool list is huge; log the request without it.
+  ctx.emit({ type: "context", label: "plan request (tools omitted)", data: { ...request, tools: `${request.tools!.length} tools` } });
+
+  const response = await ctx.anthropic.messages.create(request);
+  ctx.emit({ type: "context", label: "plan response", data: response });
+
+  const call = response.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && b.name === "submit_plan",
+  );
+  if (!call) throw new Error("Planner did not call submit_plan");
+  return call.input as Plan;
+}
+
+// =============================================================================
+// Phase 2: execution (the tool-use loop)
+// =============================================================================
+
 /**
- * Phase 2: the tool-use loop. What LangChain's create_agent did for you.
- *
  * The data that drives the loop is the `messages` array. It only grows:
  *
- *   [ { role: "user",      content: "Please create or update ... {record}" },
- *     { role: "assistant", content: [ text?, tool_use, tool_use, ... ] },   <- response.content
- *     { role: "user",      content: [ tool_result, tool_result, ... ] },    <- one per tool_use
- *     { role: "assistant", content: [ ... ] },
+ *   [ { role: "user",      content: plan.prompt + the CSV record },
+ *     { role: "assistant", content: response.content },        <- ALL blocks, as returned:
+ *                                                                  text AND tool_use
+ *     { role: "user",      content: [tool_result, tool_result] }, <- one per tool_use,
+ *                                                                  matched by tool_use_id
  *     ... ]
  *
- * Each turn:
- *   1. response = await ctx.anthropic.messages.create({ ..., tools: ctx.tools, messages })
- *   2. push { role: "assistant", content: response.content } onto messages
- *   3. if response.stop_reason !== "tool_use": the model is done; stop
- *   4. for each block in response.content with block.type === "tool_use":
- *        result = await callFacadeTool(ctx, block)   <- goes through the facade,
- *                                                       so the right pane sees it
- *   5. push { role: "user", content: [all those tool_result blocks] }
- *   6. go to 1
- *
- * Use ctx.emit({ type: "model", text }) to show the model's text in the left
- * pane, and ctx.isStopped() to bail out. Consider a max-turns guard too.
+ * Two rules the API enforces:
+ *   - every tool_use in an assistant turn must be answered by a tool_result
+ *     with the same id in the very next user turn;
+ *   - content can't be empty, so never rebuild the assistant turn from its
+ *     text alone (a turn with only tool calls has no text).
  */
-async function runUpdatePhase(ctx: AgentContext, record: CsvRecord): Promise<void> {
-  ctx.emit({ type: "log", text: `TODO(Jeff): runUpdatePhase not written yet (${ctx.tools.length} tools available).` });
+const MAX_ITERATIONS = 10;
+
+async function runUpdatePhase(ctx: AgentContext, record: CsvRecord, plan: Plan): Promise<void> {
+  // Only the tools the planner chose.
+  const tools = ctx.tools.filter((t) => plan.toolNames.includes(t.name));
+  // The planner's prompt, plus the raw record, so the executor works from the
+  // CSV's values even if the planner paraphrased one.
+  const messages: Anthropic.MessageParam[] = [
+    { role: "user", content: plan.prompt + "\n\nThe CSV record, exactly as read:\n" + JSON.stringify(record, null, 2) },
+  ];
+
+  for (let iteration = 1; iteration <= MAX_ITERATIONS && !ctx.isStopped(); iteration++) {
+    const request: Anthropic.MessageCreateParamsNonStreaming = {
+      model: ctx.model,
+      max_tokens: 2000,
+      system: SYSTEM_PROMPT,
+      tools,
+      messages,
+    };
+    ctx.emit({ type: "context", label: `execute request #${iteration}`, data: request });
+
+    const response = await ctx.anthropic.messages.create(request);
+    ctx.emit({ type: "context", label: `execute response #${iteration}`, data: response });
+
+    const text = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
+    if (text) ctx.emit({ type: "model", text });
+
+    // The assistant turn goes back into the transcript exactly as returned.
+    messages.push({ role: "assistant", content: response.content });
+
+    if (response.stop_reason !== "tool_use") {
+      ctx.emit({ type: "log", text: `Row finished (stop_reason: ${response.stop_reason}, ${iteration} model calls).` });
+      return;
+    }
+
+    // Run every tool_use in this turn; collect one tool_result per call.
+    const results: Anthropic.ToolResultBlockParam[] = [];
+    for (const block of response.content) {
+      if (block.type !== "tool_use") continue;
+      try {
+        results.push(await callFacadeTool(ctx, block));
+      } catch (err) {
+        // Transport/protocol failure: tell the model rather than crashing.
+        results.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: `Error calling ${block.name}: ${err instanceof Error ? err.message : String(err)}`,
+          is_error: true,
+        });
+      }
+    }
+    messages.push({ role: "user", content: results });
+  }
+  ctx.emit({ type: "error", text: `Stopped after ${MAX_ITERATIONS} model calls while Claude was still calling tools.` });
 }

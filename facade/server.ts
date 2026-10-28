@@ -38,9 +38,9 @@ const MONITOR_HTML = path.resolve("dist/view/monitor.html");
  * `attio` is the one shared client connected at startup; `attioTools` is the
  * tool list fetched from Attio at startup.
  */
-export function createServer(attio: Client, attioTools: Tool[]): McpServer {
+export function createFacadeServer(attio: Client, attioTools: Tool[]): McpServer {
   const server = new McpServer({ name: "attio-facade", version: "0.1.0" });
-
+  console.log("[facade] Facade Server created.")
   // ---------------------------------------------------------------------------
   // 1. Proxied Attio tools
   // ---------------------------------------------------------------------------

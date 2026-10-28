@@ -61,6 +61,31 @@ function addMessage(kind: string, text: string) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+/** Raw JSON dump, collapsed under its label. Hidden when "Show context" is off. */
+function addContext(label: string, data: unknown) {
+  const details = document.createElement("details");
+  details.className = "msg context";
+  const summary = document.createElement("summary");
+  summary.textContent = label;
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify(data, null, 2);
+  details.append(summary, pre);
+  chat.append(details);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+const showContext = $<HTMLInputElement>("show-context");
+try {
+  showContext.checked = localStorage.getItem("showContext") !== "false";
+} catch {}
+document.body.classList.toggle("show-context", showContext.checked);
+showContext.onchange = () => {
+  document.body.classList.toggle("show-context", showContext.checked);
+  try {
+    localStorage.setItem("showContext", String(showContext.checked));
+  } catch {}
+};
+
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data) as BackendToClient;
   switch (msg.type) {
@@ -71,7 +96,16 @@ ws.onmessage = (event) => {
       addMessage("record", `Row ${msg.rowIndex}:\n${JSON.stringify(msg.record, null, 2)}`);
       break;
     case "plan":
-      addMessage("plan", `Plan for row ${msg.rowIndex}:\n${msg.text}`);
+      addMessage(
+        "plan",
+        `Plan for row ${msg.rowIndex}\n\n` +
+          `Tools (${msg.plan.toolNames.length}): ${msg.plan.toolNames.join(", ")}\n\n` +
+          `Why: ${msg.plan.rationale}\n\n` +
+          `Prompt for the executor:\n${msg.plan.prompt}`,
+      );
+      break;
+    case "context":
+      addContext(msg.label, msg.data);
       break;
     case "awaiting_continue":
       continueBtn.disabled = false;

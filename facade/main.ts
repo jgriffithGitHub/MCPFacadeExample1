@@ -11,7 +11,7 @@ import type { Tool } from "@modelcontextprotocol/server";
 import cors from "cors";
 import type { Request, Response } from "express";
 import { completeOAuth, connectToAttio } from "./attio-connection.js";
-import { createServer } from "./server.js";
+import { createFacadeServer } from "./server.js";
 
 const PORT = parseInt(process.env.FACADE_PORT ?? "3001", 10);
 const ATTIO_MCP_URL = process.env.ATTIO_MCP_URL ?? "https://mcp.attio.com/mcp";
@@ -36,7 +36,7 @@ app.all("/mcp", async (req: Request, res: Response) => {
     return;
   }
   // Stateless mode: a fresh server + transport per HTTP request.
-  const server = createServer(attio, attioTools);
+  const server = createFacadeServer(attio, attioTools);
   const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => {
     transport.close().catch(() => {});

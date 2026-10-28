@@ -47,11 +47,28 @@ export type ClientToBackend =
 export type BackendToClient =
   | { type: "log"; text: string } //                          plain line in the chat pane
   | { type: "record"; rowIndex: number; record: CsvRecord } // the row just read
-  | { type: "plan"; rowIndex: number; text: string } //        model's plan for that row
+  | { type: "plan"; rowIndex: number; plan: Plan } //          planner's output, for approval
   | { type: "awaiting_continue"; rowIndex: number } //         enables the Continue button
   | { type: "model"; text: string } //                         any other model text
+  | { type: "context"; label: string; data: unknown } //       raw debug dump (shown if "Show context" is on)
   | { type: "done" }
   | { type: "error"; text: string };
+
+/**
+ * What the planning phase hands to the execution phase (and to you, for
+ * approval). The planner SEES every tool but calls none; it picks a subset.
+ *
+ *   rationale  why these tools (the planner writes this first, so it reasons
+ *              before it chooses)
+ *   toolNames  the subset the executor will get, e.g. ["search-records", "upsert-record"]
+ *   prompt     the instructions the executor will receive as its first user
+ *              message, written by the planner for this record
+ */
+export interface Plan {
+  rationale: string;
+  toolNames: string[];
+  prompt: string;
+}
 
 /** One CSV row: header name -> cell value (same as Python's csv.DictReader). */
 export type CsvRecord = Record<string, string>;

@@ -26,6 +26,7 @@ import {
   type StoredOAuthClientInformation,
   type StoredOAuthTokens,
 } from "@modelcontextprotocol/client";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import open from "open";
@@ -57,6 +58,18 @@ class FileOAuthProvider implements OAuthClientProvider {
   private store = loadStore();
 
   constructor(private readonly callbackUrl: string) {}
+
+  /**
+   * OAuth "state": a random value sent with the login request. Attio echoes it
+   * back on the redirect, and we check it matches, which proves the redirect
+   * answers a login WE started (protection against forged redirects).
+   * Attio rejects login requests that don't include it.
+   */
+  lastState?: string;
+  state() {
+    this.lastState = crypto.randomUUID();
+    return this.lastState;
+  }
 
   get redirectUrl() {
     return this.callbackUrl;
@@ -124,12 +137,16 @@ export async function connectToAttio(attioUrl: string, callbackUrl: string): Pro
     await client.connect(transport);
     return client;
   } catch (err) {
-    if (!(err instanceof UnauthorizedError)) throw err;
+   console.log("[facade] Error connecting to Attio... " + err);
+   if (!(err instanceof UnauthorizedError)) throw err;
   }
 
   // Not authorized yet: the provider has already opened the login page.
   console.log("[facade] Waiting for the Attio login to finish...");
   const params = await new Promise<URLSearchParams>((resolve) => (resolveCallback = resolve));
+  if (params.get("state") !== provider.lastState) {
+    throw new Error("OAuth state mismatch: this redirect doesn't match the login we started");
+  }
   await transport.finishAuth(params);
 
   // Reconnect with a fresh client and transport, now holding a token.
