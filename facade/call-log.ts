@@ -21,21 +21,57 @@
 // =============================================================================
 import type { CallLogEntry } from "../shared/types.js";
 
+const recordList = new Map<number, CallLogEntry>();
+
+let recordSequence = 1;
+
 /** Create an entry when a call starts. Returns it so the caller knows its id. */
 export function recordStart(toolName: string, args: Record<string, unknown>): CallLogEntry {
-  // TODO(Jeff): create the entry, store it, return it.
-  return {
-    id: 0,
+  
+  const startTime = new Date();
+  const key = recordSequence++;
+
+  let record : CallLogEntry = {
+    id: key,
     tool_name: toolName,
     arguments: args,
     status: "pending",
-    started_at: new Date().toISOString(),
+    started_at: startTime,
   };
+
+  recordList.set(key, record);
+  console.log("[facade] recordStart called: key = " + key)
+
+  return record;
 }
 
 /** Update an entry. `changes` holds only the fields that changed. */
 export function updateEntry(id: number, changes: Partial<CallLogEntry>): void {
-  // TODO(Jeff): find the entry and apply the changes.
+
+  let current_record = recordList.get(id);
+  if(current_record !== undefined)
+  {
+    updateProperty(current_record, changes, 'tool_name');
+    updateProperty(current_record, changes, 'arguments');
+    updateProperty(current_record, changes, 'status');
+    updateProperty(current_record, changes, 'started_at');
+    updateProperty(current_record, changes, 'finished_at');
+    updateProperty(current_record, changes, 'result');
+    updateProperty(current_record, changes, 'error');
+
+    recordList.set(id, current_record);
+    console.log("[facade] updateEntry called: key = " + id + " -- status = " + current_record.status)
+  }
+}
+
+function updateProperty<K extends keyof CallLogEntry>(current_record: CallLogEntry, changes: Partial<CallLogEntry>, key: K): void
+{
+  if(current_record !== undefined)
+  {
+    if (Object.hasOwn(changes, key) && changes[key] !== undefined) {
+      current_record[key] = changes[key];
+    }
+  }
 }
 
 /** Entries with id > sinceId, oldest first. The view polls this. */
@@ -43,7 +79,14 @@ export function getEntriesSince(sinceId: number): CallLogEntry[] {
   // TODO(Jeff): return the new entries.
   // Note: the view only re-renders entries it receives, so if an OLD entry's
   // status changes (pending -> ok), think about how the view learns that.
-  return [];
+
+  const filteredMap = new Map(
+      [...recordList.entries()].filter(([key, value]) => key >= sinceId)
+    ); 
+  const valuesArray = Array.from(filteredMap.values()); 
+  console.log("[facade] getEntriesSince called: key = " + sinceId)
+
+  return valuesArray;
 }
 
 /** Resolves when acknowledge(id) is called. The forwarding handler awaits this. */

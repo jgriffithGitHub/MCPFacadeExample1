@@ -25,8 +25,8 @@ export interface CallLogEntry {
   tool_name: string; //               e.g. "search-records"
   arguments: Record<string, unknown>; // exactly what the model sent
   status: CallStatus;
-  started_at: string; //              ISO timestamp
-  finished_at?: string;
+  started_at: Date; //                Date that will be converted as needed
+  finished_at?: Date;
   result?: unknown; //                the CallToolResult from Attio (raw)
   error?: string; //                  message when status is error/awaiting_ack/acknowledged
 }

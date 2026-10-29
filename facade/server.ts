@@ -40,7 +40,6 @@ const MONITOR_HTML = path.resolve("dist/view/monitor.html");
  */
 export function createFacadeServer(attio: Client, attioTools: Tool[]): McpServer {
   const server = new McpServer({ name: "attio-facade", version: "0.1.0" });
-  console.log("[facade] Facade Server created.")
   // ---------------------------------------------------------------------------
   // 1. Proxied Attio tools
   // ---------------------------------------------------------------------------
@@ -159,6 +158,28 @@ async function forwardToAttio(
   name: string,
   args: Record<string, unknown>,
 ): Promise<CallToolResult> {
+
+  const entry = callLog.recordStart(name, args);
+
+  console.log("[facade] forwardToAttio called: entry key = " + entry.id);  
   const result = (await attio.callTool({ name, arguments: args })) as CallToolResult;
+
+  if(result.isError)
+  {
+    const text = result.content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
+
+    callLog.updateEntry(entry.id, { status: "awaiting_ack", result: text });  
+    console.log("Attio reported error: " + text);
+    await callLog.waitForAck(entry.id);
+    callLog.updateEntry(entry.id, { status: "acknowledged", finished_at:new Date() });  
+  }
+  else
+  {
+    callLog.updateEntry(entry.id, { status: "ok", result, finished_at:new Date() });  
+  }
+
   return result;
 }
