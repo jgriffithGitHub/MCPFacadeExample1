@@ -48,31 +48,15 @@ export function recordStart(toolName: string, args: Record<string, unknown>): Ca
 
 /** Update an entry. `changes` holds only the fields that changed. */
 export function updateEntry(id: number, changes: Partial<CallLogEntry>): void {
+  const currentRecord = recordList.get(id);
+  if (!currentRecord) return;
 
-  let current_record = recordList.get(id);
-  if(current_record !== undefined)
-  {
-    updateProperty(current_record, changes, 'tool_name');
-    updateProperty(current_record, changes, 'arguments');
-    updateProperty(current_record, changes, 'status');
-    updateProperty(current_record, changes, 'started_at');
-    updateProperty(current_record, changes, 'finished_at');
-    updateProperty(current_record, changes, 'result');
-    updateProperty(current_record, changes, 'error');
+  const definedChanges = Object.fromEntries(
+    Object.entries(changes).filter(([, value]) => value !== undefined),
+  );
 
-    recordList.set(id, current_record);
-    console.log("[facade] updateEntry called: key = " + id + " -- status = " + current_record.status)
-  }
-}
-
-function updateProperty<K extends keyof CallLogEntry>(current_record: CallLogEntry, changes: Partial<CallLogEntry>, key: K): void
-{
-  if(current_record !== undefined)
-  {
-    if (Object.hasOwn(changes, key) && changes[key] !== undefined) {
-      current_record[key] = changes[key];
-    }
-  }
+  Object.assign(currentRecord, definedChanges);
+  console.log(`[facade] updateEntry called: key = ${id} -- status = ${currentRecord.status}`);
 }
 
 /** Entries with id > sinceId, oldest first. The view polls this. */
@@ -107,7 +91,7 @@ export function waitForAck(id: number): Promise<void> {
 /** Called by the acknowledge_error tool. Returns false if nothing was waiting. */
 export function acknowledge(id: number): boolean {
 
-  console.log("[facade] acknowledge called: waitList.has(" + id + ") = " + waitList.has(id))
+  console.log("[facade] acknowledge called: waitList.has(" + id + ") = " + waitList.has(id));
 
   const waiter = waitList.get(id);
   if (!waiter) return false;
