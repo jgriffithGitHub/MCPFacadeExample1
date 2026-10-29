@@ -171,10 +171,11 @@ async function forwardToAttio(
       .map((b) => b.text)
       .join("\n");
 
-    callLog.updateEntry(entry.id, { status: "awaiting_ack", result: text });  
     console.log("Attio reported error: " + text);
-    await callLog.waitForAck(entry.id);
-    callLog.updateEntry(entry.id, { status: "acknowledged", finished_at:new Date() });  
+    callLog.updateEntry(entry.id, { status: "awaiting_ack", result: text });  
+
+    const ackResult = await callLog.waitForAck(entry.id) as void;
+    callLog.updateEntry(entry.id, { status: "acknowledged", finished_at:new Date() });
   }
   else
   {

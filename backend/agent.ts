@@ -282,7 +282,9 @@ async function runUpdatePhase(ctx: AgentContext, record: CsvRecord, plan: Plan):
     for (const block of response.content) {
       if (block.type !== "tool_use") continue;
       try {
+        console.log("[host server] - callFacadeTool called: " + block.name);
         results.push(await callFacadeTool(ctx, block));
+        console.log("[host server] - callFacadeTool returned: " + block.name);
       } catch (err) {
         // Transport/protocol failure: tell the model rather than crashing.
         results.push({

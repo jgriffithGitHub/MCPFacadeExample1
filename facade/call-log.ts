@@ -22,8 +22,9 @@
 import type { CallLogEntry } from "../shared/types.js";
 
 const recordList = new Map<number, CallLogEntry>();
-
 let recordSequence = 1;
+
+const waitList = new Map<number, { promise: Promise<void>; resolve: () => void }>();
 
 /** Create an entry when a call starts. Returns it so the caller knows its id. */
 export function recordStart(toolName: string, args: Record<string, unknown>): CallLogEntry {
@@ -91,12 +92,27 @@ export function getEntriesSince(sinceId: number): CallLogEntry[] {
 
 /** Resolves when acknowledge(id) is called. The forwarding handler awaits this. */
 export function waitForAck(id: number): Promise<void> {
-  // TODO(Jeff): return a Promise that stays pending until acknowledge(id).
-  return Promise.resolve();
+  const existing = waitList.get(id);
+  if (existing) return existing.promise;
+
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  waitList.set(id, { promise, resolve });
+  console.log("[facade] waitForAck called: id: " + id + " added.");
+  return promise;
 }
 
 /** Called by the acknowledge_error tool. Returns false if nothing was waiting. */
 export function acknowledge(id: number): boolean {
-  // TODO(Jeff): release the waiter for this id, update the entry's status.
-  return false;
+
+  console.log("[facade] acknowledge called: waitList.has(" + id + ") = " + waitList.has(id))
+
+  const waiter = waitList.get(id);
+  if (!waiter) return false;
+
+  waitList.delete(id);
+  waiter.resolve();
+  return true;
 }
