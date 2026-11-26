@@ -17,7 +17,7 @@ export default defineConfig({
     sourcemap: "inline",
     minify: false,
     rollupOptions: { input: INPUT },
-    outDir: "dist",
+    outDir: "../dist",
     emptyOutDir: false,
   },
 });

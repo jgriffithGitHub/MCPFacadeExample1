@@ -121,7 +121,7 @@ export function createFacadeServer(attio: Client, attioTools: Tool[]): McpServer
     server,
     "Attio call monitor",
     MONITOR_URI,
-    { mimeType: RESOURCE_MIME_TYPE },
+    { mimeType: RESOURCE_MIME_TYPE, },
     async (): Promise<ReadResourceResult> => ({
       contents: [{ uri: MONITOR_URI, mimeType: RESOURCE_MIME_TYPE, text: await fs.readFile(MONITOR_HTML, "utf-8") }],
     }),

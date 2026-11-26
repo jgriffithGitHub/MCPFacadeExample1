@@ -85,6 +85,14 @@ A suggested order: `runPlanPhase` (see the model talk), then `runUpdatePhase`
   changed status (e.g. `awaiting_ack` → `acknowledged`). The view merges
   entries by id, so re-sending an updated entry works. How you decide what to
   re-send is up to you.
+
+  Update: 10/29 - One decision that was made was to block the client until
+  an error is acknowledged. This handles one use case, but not all issues
+  need to block processing. If, for example, the acknowledgement is being used
+  simply to require a person to say "Yes, I saw it.", then other processing
+  could continue while waiting. The only way to handle this is to use
+  notifications.
+  
 - **Two iframes.** `host/sandbox.ts` is the SDK's outer sandbox proxy (port
   8081 = different origin), which loads the view into an inner iframe. It's
   copied unchanged from the SDK's `examples/basic-host`.
